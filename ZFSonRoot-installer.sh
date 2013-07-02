@@ -1,6 +1,7 @@
 #!/bin/sh
 # Made by Julien DAUPHANT
 # base on http://www.keltia.net/howtos/mfsbsd-zfs91/
+# Don't forget NEEDED_VARIABLES
 
 DISK0=${DISK0:-"ada0"}
 DISK1=${DISK1:-"ada1"}
@@ -11,14 +12,16 @@ FB_PACKAGES=${FB_PACKAGES:-"base doc games kernel lib32"} # src ports
 NTP_SERVER=${NTP_SERVER:-"ntp.ovh.net"}
 SWAP_SIZE=${SWAP_SIZE:-"32G"}
 
-for var in ADMIN_MAIL ADMIN_SSH_PUBLIC_KEY SERVER_HOSTNAME
+set -x -e
+NEEDED_VARIABLES="ADMIN_MAIL ADMIN_SSH_PUBLIC_KEY SERVER_HOSTNAME"
+for var in $NEEDED_VARIABLES
 do
-	eval "[ -z \$$var ]" && { echo "\$$var needed" ; exit ; }
+	eval "[ -z \"\$$var\" ]" && { echo "\$$var needed" ; exit ; }
 done
 
-set -x
 echo -n "Clean disks : "
 zfs umount -f -a
+set +e
 zpool destroy ${ZFS_POOL_NAME}
 set -e
 dd if=/dev/zero of=/dev/$DISK0 bs=512 count=10
@@ -175,11 +178,9 @@ zfs set mountpoint=/tmp ${ZFS_POOL_NAME}/tmp
 zfs set mountpoint=/var ${ZFS_POOL_NAME}/var
 zfs set mountpoint=/usr ${ZFS_POOL_NAME}/usr
 zfs set mountpoint=/home ${ZFS_POOL_NAME}/home
-zfs set mountpoint=/boot zboot/boot
 
 zpool set bootfs=${ZFS_POOL_NAME}/root ${ZFS_POOL_NAME}
 echo -n "OK"
-
 
 echo "Now reboot"
 
