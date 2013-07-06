@@ -11,6 +11,8 @@ FB_RELEASE_PATH=${FB_RELEASE_PATH:-"ftp://ftp6.fr.freebsd.org/pub/FreeBSD/releas
 FB_PACKAGES=${FB_PACKAGES:-"base doc games kernel lib32"} # src ports
 NTP_SERVER=${NTP_SERVER:-"ntp.ovh.net"}
 SWAP_SIZE=${SWAP_SIZE:-"32G"}
+PKG_TO_INSTALL=${PKG_TO_INSTALL:-""}
+FB_PKGNG_REPOSITORY=${FB_PKGNG_REPOSITORY:-"http://mirror.exonetric.net/pub/pkgng/freebsd%3A9%3Ax86%3A64/latest"}
 
 set -x -e
 NEEDED_VARIABLES="ADMIN_MAIL ADMIN_SSH_PUBLIC_KEY SERVER_HOSTNAME"
@@ -20,8 +22,9 @@ do
 done
 
 echo -n "Clean disks : "
-zfs umount -f -a
 set +e
+umount $TANK_MP/root/dev
+zfs umount -f -a
 zpool destroy ${ZFS_POOL_NAME}
 set -e
 dd if=/dev/zero of=/dev/$DISK0 bs=512 count=10
@@ -153,7 +156,8 @@ RUBY_DEFAULT_VER=1.9
 WITH_PKGNG=yes
 EOF
 
-sed -i -e 's/^#.root\:.*$/root: '$ADMIN_EMAIL'/g' $TANK_MP/root/etc/aliases
+hostname $SERVER_HOSTNAME
+sed -i -e "s/^.*root:.*$/root: $ADMIN_MAIL/" $TANK_MP/root/etc/mail/aliases
 chroot $TANK_MP/root make -C /etc/mail
 
 echo "restrict 127.0.0.1" >> $TANK_MP/root/etc/ntp.conf
@@ -163,6 +167,25 @@ sed -i -e 's/#PermitRootLogin no/PermitRootLogin yes/g;s/#PasswordAuthentication
 mkdir $TANK_MP/root/root/.ssh
 chmod 700 $TANK_MP/root/root/.ssh
 echo $ADMIN_SSH_PUBLIC_KEY > $TANK_MP/root/root/.ssh/authorized_keys
+echo "OK"
+
+echo -n "Install additional pkg : "
+cp /etc/resolv.conf $TANK_MP/root/etc
+
+mount_nullfs /dev $TANK_MP/root/dev
+#chroot $TANK_MP/root /bin/sh -i interactive /usr/sbin/portsnap fetch extract
+fetch -o $TANK_MP/root/root $FB_PKGNG_REPOSITORY/Latest/pkg.txz
+tar xf $TANK_MP/root/root/pkg.txz -C $TANK_MP/root/root -s ",/.*/,,g" "*/pkg-static"
+chroot $TANK_MP/root /root/pkg-static add /root/pkg.txz
+
+mkdir -p $TANK_MP/root/usr/local/etc
+echo "PACKAGESITE: $FB_PKGNG_REPOSITORY" > $TANK_MP/root/usr/local/etc/pkg.conf
+
+for pkg_name in $PKG_TO_INSTALL ; do
+	echo -n $pkg_name' '
+	chroot $TANK_MP/root /usr/local/sbin/pkg install -y $pkg_name
+done
+umount $TANK_MP/root/dev
 echo "OK"
 
 echo "Finish zfs config : "
