@@ -5,8 +5,10 @@
 
 DISK0=${DISK0:-"ada0"}
 DISK1=${DISK1:-"ada1"}
-ZFS_POOL_NAME=${ZFS_POOL_NAME:-"tank"}
-TANK_MP=${TANK_MP:-"/tmp/${ZFS_POOL_NAME}"}
+ZFS_ROOT_POOL_NAME=${ZFS_ROOT_POOL_NAME:-"tank"}
+ZFS_ROOT_POOL_SIZE=${ZFS_ROOT_POOL_SIZE:-"1T"}
+ZFS_PUB_POOL_NAME=${ZFS_PUB_POOL_NAME:-"zpub"}
+TANK_MP=${TANK_MP:-"/tmp/${ZFS_ROOT_POOL_NAME}"}
 FB_RELEASE_PATH=${FB_RELEASE_PATH:-"ftp://ftp6.fr.freebsd.org/pub/FreeBSD/releases/amd64/amd64/9.1-RELEASE"}
 FB_PACKAGES=${FB_PACKAGES:-"base doc games kernel lib32"} # src ports
 NTP_SERVER=${NTP_SERVER:-"ntp.ovh.net"}
@@ -25,7 +27,8 @@ echo -n "Clean disks : "
 set +e
 umount $TANK_MP/root/dev
 zfs umount -f -a
-zpool destroy ${ZFS_POOL_NAME}
+zpool destroy ${ZFS_ROOT_POOL_NAME}
+zpool destroy ${ZFS_PUB_POOL_NAME}
 set -e
 dd if=/dev/zero of=/dev/$DISK0 bs=512 count=10
 dd if=/dev/zero of=/dev/$DISK1 bs=512 count=10
@@ -37,11 +40,13 @@ gpart create -s gpt $DISK1
 
 gpart add -s 64K -a 4k -t freebsd-boot $DISK0
 gpart add -s $SWAP_SIZE -a 4k -t freebsd-swap -l swap0 $DISK0
-gpart add -a 4k -t freebsd-zfs -l ${ZFS_POOL_NAME}0 $DISK0
+gpart add -s $ZFS_ROOT_POOL_SIZE -a 4k -t freebsd-zfs -l ${ZFS_ROOT_POOL_NAME}0 $DISK0
+gpart add -a 4k -t freebsd-zfs -l ${ZFS_PUB_POOL_NAME}0 $DISK0
 
 gpart add -s 64K -a 4k -t freebsd-boot $DISK1
-gpart add -s 32G -a 4k -t freebsd-swap -l swap1 $DISK1
-gpart add -a 4k -t freebsd-zfs -l ${ZFS_POOL_NAME}1 $DISK1
+gpart add -s $SWAP_SIZE -a 4k -t freebsd-swap -l swap1 $DISK1
+gpart add -s $ZFS_ROOT_POOL_SIZE -a 4k -t freebsd-zfs -l ${ZFS_ROOT_POOL_NAME}1 $DISK1
+gpart add -a 4k -t freebsd-zfs -l ${ZFS_PUB_POOL_NAME}1 $DISK1
 
 gpart set -a bootme -i 3 $DISK0
 gpart set -a bootme -i 3 $DISK1
@@ -54,45 +59,47 @@ echo "OK"
 
 echo -n "Create zfs pool : "
 echo -n "pool " 
-zpool create -f -o cachefile=/tmp/zpool.cache -O mountpoint=$TANK_MP ${ZFS_POOL_NAME} mirror gpt/${ZFS_POOL_NAME}0 gpt/${ZFS_POOL_NAME}1
+zpool create -f -o cachefile=/tmp/zpool.cache -O mountpoint=$TANK_MP ${ZFS_ROOT_POOL_NAME} mirror gpt/${ZFS_ROOT_POOL_NAME}0 gpt/${ZFS_ROOT_POOL_NAME}1
+zpool create -f -o cachefile=/tmp/zpool.cache -O mountpoint=legacy ${ZFS_PUB_POOL_NAME}  gpt/${ZFS_PUB_POOL_NAME}0 gpt/${ZFS_PUB_POOL_NAME}1
 
-zfs set checksum=fletcher4 ${ZFS_POOL_NAME}
+zfs set checksum=fletcher4 ${ZFS_ROOT_POOL_NAME}
+zfs set checksum=fletcher4 ${ZFS_PUB_POOL_NAME}
 
 echo -n "/root "
-zfs create -o compression=off ${ZFS_POOL_NAME}/root
-zfs inherit mountpoint ${ZFS_POOL_NAME}/root
+zfs create -o compression=off ${ZFS_ROOT_POOL_NAME}/root
+zfs inherit mountpoint ${ZFS_ROOT_POOL_NAME}/root
 
 echo -n "/usr "
-zfs create -o mountpoint=$TANK_MP/root/usr ${ZFS_POOL_NAME}/usr
-zfs create -o compression=lzjb ${ZFS_POOL_NAME}/usr/obj
-zfs inherit mountpoint ${ZFS_POOL_NAME}/usr/obj
-zfs create ${ZFS_POOL_NAME}/usr/local
-zfs create -o compression=lzjb ${ZFS_POOL_NAME}/usr/src
-zfs inherit mountpoint ${ZFS_POOL_NAME}/usr/src
-zfs set dedup=on ${ZFS_POOL_NAME}/usr/src
+zfs create -o mountpoint=$TANK_MP/root/usr ${ZFS_ROOT_POOL_NAME}/usr
+zfs create -o compression=lzjb ${ZFS_ROOT_POOL_NAME}/usr/obj
+zfs inherit mountpoint ${ZFS_ROOT_POOL_NAME}/usr/obj
+zfs create ${ZFS_ROOT_POOL_NAME}/usr/local
+zfs create -o compression=lzjb ${ZFS_ROOT_POOL_NAME}/usr/src
+zfs inherit mountpoint ${ZFS_ROOT_POOL_NAME}/usr/src
+zfs set dedup=on ${ZFS_ROOT_POOL_NAME}/usr/src
 
 echo -n "/var "
-zfs create -o mountpoint=$TANK_MP/root/var ${ZFS_POOL_NAME}/var
-zfs create -o exec=off -o setuid=off ${ZFS_POOL_NAME}/var/run
-zfs inherit mountpoint ${ZFS_POOL_NAME}/var/run
-zfs create -o compression=lzjb -o exec=off -o setuid=off ${ZFS_POOL_NAME}/var/tmp
-zfs inherit mountpoint ${ZFS_POOL_NAME}/var/tmp
+zfs create -o mountpoint=$TANK_MP/root/var ${ZFS_ROOT_POOL_NAME}/var
+zfs create -o exec=off -o setuid=off ${ZFS_ROOT_POOL_NAME}/var/run
+zfs inherit mountpoint ${ZFS_ROOT_POOL_NAME}/var/run
+zfs create -o compression=lzjb -o exec=off -o setuid=off ${ZFS_ROOT_POOL_NAME}/var/tmp
+zfs inherit mountpoint ${ZFS_ROOT_POOL_NAME}/var/tmp
 chmod 1777 $TANK_MP/root/var/tmp
 
 echo -n "/tmp "
-zfs create -o mountpoint=$TANK_MP/root/tmp -o compression=lzjb -o exec=off -o setuid=off ${ZFS_POOL_NAME}/tmp
+zfs create -o mountpoint=$TANK_MP/root/tmp -o compression=lzjb -o exec=off -o setuid=off ${ZFS_ROOT_POOL_NAME}/tmp
 chmod 1777 $TANK_MP/root/tmp
 
 echo -n "/home "
-zfs create -o mountpoint=$TANK_MP/root/home ${ZFS_POOL_NAME}/home
-zfs inherit mountpoint ${ZFS_POOL_NAME}/home
+zfs create -o mountpoint=$TANK_MP/root/home ${ZFS_ROOT_POOL_NAME}/home
+zfs inherit mountpoint ${ZFS_ROOT_POOL_NAME}/home
 
 echo -n "/usr/port "
-zfs create -o compression=lzjb -o setuid=off ${ZFS_POOL_NAME}/usr/ports
-zfs inherit mountpoint ${ZFS_POOL_NAME}/usr/ports
-zfs create -o compression=off -o exec=off -o setuid=off ${ZFS_POOL_NAME}/usr/ports/distfiles
-zfs create -o compression=off -o exec=off -o setuid=off ${ZFS_POOL_NAME}/usr/ports/packages
-zfs set reservation=1024m ${ZFS_POOL_NAME}/root
+zfs create -o compression=lzjb -o setuid=off ${ZFS_ROOT_POOL_NAME}/usr/ports
+zfs inherit mountpoint ${ZFS_ROOT_POOL_NAME}/usr/ports
+zfs create -o compression=off -o exec=off -o setuid=off ${ZFS_ROOT_POOL_NAME}/usr/ports/distfiles
+zfs create -o compression=off -o exec=off -o setuid=off ${ZFS_ROOT_POOL_NAME}/usr/ports/packages
+zfs set reservation=1024m ${ZFS_ROOT_POOL_NAME}/root
 echo -n "OK"
 
 echo -n "Install system : "
@@ -110,7 +117,7 @@ geom_label_load="YES"
 geom_mirror_load="YES"
 geom_uzip_load="YES"
 vm.kmem_size="$SWAP_SIZE"
-vfs.root.mountfrom="zfs:${ZFS_POOL_NAME}/root"
+vfs.root.mountfrom="zfs:${ZFS_ROOT_POOL_NAME}/root"
 EOF
 
 cat << EOF > $TANK_MP/root/etc/fstab
@@ -196,13 +203,13 @@ cd /root
 
 zfs umount -a
 set +e
-zfs set mountpoint=legacy ${ZFS_POOL_NAME}
-zfs set mountpoint=/tmp ${ZFS_POOL_NAME}/tmp
-zfs set mountpoint=/var ${ZFS_POOL_NAME}/var
-zfs set mountpoint=/usr ${ZFS_POOL_NAME}/usr
-zfs set mountpoint=/home ${ZFS_POOL_NAME}/home
+zfs set mountpoint=legacy ${ZFS_ROOT_POOL_NAME}
+zfs set mountpoint=/tmp ${ZFS_ROOT_POOL_NAME}/tmp
+zfs set mountpoint=/var ${ZFS_ROOT_POOL_NAME}/var
+zfs set mountpoint=/usr ${ZFS_ROOT_POOL_NAME}/usr
+zfs set mountpoint=/home ${ZFS_ROOT_POOL_NAME}/home
 
-zpool set bootfs=${ZFS_POOL_NAME}/root ${ZFS_POOL_NAME}
+zpool set bootfs=${ZFS_ROOT_POOL_NAME}/root ${ZFS_ROOT_POOL_NAME}
 echo -n "OK"
 
 echo "Now reboot"
