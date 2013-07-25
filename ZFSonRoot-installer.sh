@@ -14,7 +14,7 @@ FB_PACKAGES=${FB_PACKAGES:-"base doc games kernel lib32"} # src ports
 NTP_SERVER=${NTP_SERVER:-"ntp.ovh.net"}
 SWAP_SIZE=${SWAP_SIZE:-"32G"}
 PKG_TO_INSTALL=${PKG_TO_INSTALL:-""}
-FB_PKGNG_REPOSITORY=${FB_PKGNG_REPOSITORY:-"http://mirror.exonetric.net/pub/pkgng/freebsd%3A9%3Ax86%3A64/latest"}
+FB_PKGNG_REPOSITORY=${FB_PKGNG_REPOSITORY:-"http://pkg.cdn.pcbsd.org/9.1-RELEASE/amd64"}
 
 set -x -e
 NEEDED_VARIABLES="ADMIN_MAIL ADMIN_SSH_PUBLIC_KEY SERVER_HOSTNAME"
